@@ -9,6 +9,7 @@
 package org.openhab.binding.elerotransmitterstick.handler;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -84,19 +85,21 @@ public class EleroTransmitterStickHandler extends BaseBridgeHandler implements B
                 public void run() {
                     if (getThing().getStatus() == ThingStatus.ONLINE && stick != null) {
                         for (Channel c : channels) {
-                            try {
-                                synchronized (channels) {
-                                    if (c.needsUpdate()) {
-                                        EasyAck r = stick.sendEasyInfo(c.channelId);
-                                        if (r != null) {
-                                            c.setStatus(r.getStatus());
+                            if (c.hasListeners()) {
+                                try {
+                                    synchronized (channels) {
+                                        if (c.needsUpdate()) {
+                                            EasyAck r = stick.sendEasyInfo(c.channelId);
+                                            if (r != null) {
+                                                c.setStatus(r.getStatus());
+                                            }
+                                        } else {
+                                            c.countdown();
                                         }
-                                    } else {
-                                        c.countdown();
                                     }
+                                } catch (Throwable t) {
+                                    logger.error("EleroTransmitterStickHandler", t);
                                 }
-                            } catch (Throwable t) {
-                                logger.error("EleroTransmitterStickHandler", t);
                             }
                         }
                     }
@@ -116,19 +119,11 @@ public class EleroTransmitterStickHandler extends BaseBridgeHandler implements B
     }
 
     public void addStatusListener(int channelId, StatusListener listener) {
-        synchronized (channels) {
-            Channel c = channels[channelId - 1];
-            c.listeners.add(listener);
-
-            listener.statusChanged(c.getStatus());
-        }
+        channels[channelId - 1].addListener(listener);
     }
 
     public void removeStatusListener(int channelId, StatusListener listener) {
-        synchronized (channels) {
-            Channel c = channels[channelId - 1];
-            c.listeners.remove(listener);
-        }
+        channels[channelId - 1].removeListener(listener);
     }
 
     public void triggerFastUpdate(int channelId) {
@@ -142,12 +137,25 @@ public class EleroTransmitterStickHandler extends BaseBridgeHandler implements B
         private int timeToPoll;
         private ResponseStatus status;
         private int channelId;
-        private ArrayList<StatusListener> listeners = new ArrayList<>();
+        private List<StatusListener> listeners = Collections.synchronizedList(new ArrayList<StatusListener>());
 
         public Channel(ResponseStatus status, int timeToPoll, int id) {
             this.status = status;
             this.timeToPoll = timeToPoll;
             channelId = id;
+        }
+
+        public boolean hasListeners() {
+            return !listeners.isEmpty();
+        }
+
+        public void removeListener(StatusListener listener) {
+            listeners.remove(listener);
+        }
+
+        public void addListener(StatusListener listener) {
+            listeners.add(listener);
+            listener.statusChanged(status);
         }
 
         public void countdown() {
