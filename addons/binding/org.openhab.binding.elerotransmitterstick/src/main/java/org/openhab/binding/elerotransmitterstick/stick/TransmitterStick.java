@@ -1,227 +1,261 @@
-/**
- * Copyright (c) 2014-2016 by the respective copyright holders.
- *
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-v10.html
- */
 package org.openhab.binding.elerotransmitterstick.stick;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.TooManyListenersException;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.TreeSet;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.DelayQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.openhab.binding.elerotransmitterstick.config.EleroTransmitterStickConfig;
+import org.openhab.binding.elerotransmitterstick.handler.StatusListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import gnu.io.CommPortIdentifier;
-import gnu.io.NoSuchPortException;
-import gnu.io.PortInUseException;
-import gnu.io.SerialPort;
-import gnu.io.SerialPortEvent;
-import gnu.io.SerialPortEventListener;
-import gnu.io.UnsupportedCommOperationException;
-
-/**
- * The {@link TransmitterStick} is responsible for communicating with an elero transmitter stick.
- *
- * @author Volker Bier - Initial contribution
- */
 public class TransmitterStick {
     private final Logger logger = LoggerFactory.getLogger(TransmitterStick.class);
 
-    private final ArrayList<Byte> bytes = new ArrayList<>();
+    private final SerialConnection connection;
+    private final CommandWorker worker;
+
+    private final HashMap<Integer, ArrayList<StatusListener>> allListeners = new HashMap<>();
 
     private EleroTransmitterStickConfig config;
-    private SerialPort serialPort;
-    private boolean open;
-    private Response response = null;
 
     public TransmitterStick(EleroTransmitterStickConfig stickConfig) {
         config = stickConfig;
+        connection = new SerialConnection(config.portName);
+        worker = new CommandWorker(config.updateInterval);
     }
 
-    public void openConnection() throws ConnectException {
+    public void initialize() throws ConnectException {
+        logger.debug("Initializing Transmitter Stick...");
+        connection.open();
         try {
-            if (!open) {
-                logger.info("Opening serial connection to port {}...", config.portName);
+            worker.startUpdates();
+        } catch (Exception e) {
+            connection.close();
+            throw new ConnectException("Failed to query channels from stick", e);
+        }
+        logger.debug("Transmitter Stick initialized, worker running.");
+    }
 
-                CommPortIdentifier portIdentifier;
+    public void dispose() {
+        logger.debug("Disposing Transmitter Stick...");
+        allListeners.clear();
+        worker.terminateUpdates();
+        connection.close();
+        logger.debug("Transmitter Stick disposed.");
+    }
 
-                try {
-                    portIdentifier = CommPortIdentifier.getPortIdentifier(config.portName);
-                    serialPort = portIdentifier.open("openhab", 3000);
-                    open = true;
+    public int[] getKnownIds() {
+        return worker.knownIds;
+    }
 
-                    serialPort.setSerialPortParams(38400, SerialPort.DATABITS_8, SerialPort.STOPBITS_1,
-                            SerialPort.PARITY_NONE);
+    public void sendCommand(CommandType cmd, int... channelIds) throws IOException {
+        worker.executeCommand(cmd, channelIds);
+    }
 
-                    serialPort.addEventListener(new SerialPortEventListener() {
-                        @Override
-                        public void serialEvent(SerialPortEvent event) {
-                            try {
-                                if (event.getEventType() == SerialPortEvent.DATA_AVAILABLE) {
-                                    parseInput();
-                                }
-                            } catch (IOException ex) {
-                                logger.error("elerotransmitterstick", "IOException reading from port {}!",
-                                        config.portName);
-                            }
-                        }
-                    });
+    public void addStatusListener(int channelId, StatusListener listener) {
+        synchronized (allListeners) {
+            ArrayList<StatusListener> listeners = allListeners.get(channelId);
+            if (listeners == null) {
+                listeners = new ArrayList<>();
+                allListeners.put(channelId, listeners);
+            }
+            listeners.add(listener);
+        }
+    }
 
-                    serialPort.notifyOnDataAvailable(true);
-                } catch (UnsupportedCommOperationException | TooManyListenersException ex) {
-                    closeConnection();
-                    throw ex;
+    public void removeStatusListener(int channelId, StatusListener listener) {
+        synchronized (allListeners) {
+            ArrayList<StatusListener> listeners = allListeners.get(channelId);
+            if (listeners != null) {
+                listeners.remove(listener);
+
+                if (listeners.isEmpty()) {
+                    allListeners.remove(channelId);
                 }
-            } else {
-                logger.debug("Serial connection to port {} is already open!", config.portName);
             }
-        } catch (NoSuchPortException | PortInUseException | UnsupportedCommOperationException
-                | TooManyListenersException ex) {
-            throw new ConnectException(ex);
         }
     }
 
-    public void closeConnection() {
-        if (open) {
-            logger.info("Closing serial connection to port {}...", config.portName);
-
-            serialPort.close();
-            open = false;
-        } else {
-            logger.debug("Serial connection to port {} is already closed or has active listeners!", config.portName);
-        }
-    }
-
-    public EasyAck sendEasySend(CommandType cmd, Integer... channelIds) throws IOException {
-        if (channelIds.length == 1) {
-            return (EasyAck) sendPacket(Command.createEasySend(cmd, channelIds));
-        }
-
-        // this is a workaround for a bug in the stick firmware that does
-        // not work when more than one channel is specified in a packet
-        for (Integer id : channelIds) {
-            sendPacket(Command.createEasySend(cmd, id));
-        }
-
-        return null;
-    }
-
-    public EasyConfirm sendEasyCheck() throws IOException {
-        return (EasyConfirm) sendPacket(Command.createEasyCheck());
-    }
-
-    public EasyAck sendEasyInfo(Integer... channelIds) throws IOException {
-        if (channelIds.length == 1) {
-            return (EasyAck) sendPacket(Command.createEasyInfo(channelIds));
-        }
-
-        // this is a workaround for a bug in the stick firmware that does
-        // not work when more than one channel is specified in a packet
-        for (Integer id : channelIds) {
-            sendPacket(Command.createEasyInfo(id));
-        }
-
-        return null;
-    }
-
-    // send a packet to the stick and wait for the response
-    private synchronized Response sendPacket(Command p) throws IOException {
-        Response r = response;
-
-        synchronized (bytes) {
-            response = null;
-            logger.debug("Writing packet to stick: {}", p);
-            serialPort.getOutputStream().write(p.tobytes());
-
-            if (r != null) {
-                return r;
+    private void notifyListeners(int channelId, ResponseStatus status) {
+        synchronized (allListeners) {
+            ArrayList<StatusListener> listeners = allListeners.get(channelId);
+            if (listeners != null) {
+                for (StatusListener l : listeners) {
+                    l.statusChanged(channelId, status);
+                }
             }
-
-            try {
-                logger.trace("Waiting {} ms for answer from stick...", p.getTimeout());
-                bytes.wait(p.getTimeout());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-
-            r = response;
-            response = null;
         }
-
-        logger.debug("Stick answered {} for packet {}.", r, p);
-        return r;
     }
 
-    private void parseInput() throws IOException {
-        logger.trace("parsing input...");
-        while (serialPort.getInputStream().available() > 0) {
-            byte b = (byte) serialPort.getInputStream().read();
-            bytes.add(b);
-        }
-        logger.trace("input parsed. buffer contains {} bytes.", bytes.size());
-        analyzeBuffer();
-    }
+    static class DueCommandSet extends TreeSet<Command> {
+        private static final long serialVersionUID = -3216360253151368826L;
 
-    private void analyzeBuffer() {
-        // drop everything before the beginning of the packet header 0xAA
-        while (!bytes.isEmpty() && bytes.get(0) != (byte) 0xAA) {
-            logger.trace("dropping byte {} from buffer", bytes.get(0));
-            bytes.remove(0);
-        }
-
-        logger.trace("buffer contains {} bytes: {}", bytes.size(), Command.bytesToHex(bytes));
-        if (bytes.size() > 1) {
-            // second byte should be length byte (has to be either 0x04 or 0x05)
-            int len = bytes.get(1);
-            logger.trace("packet length is {} bytes.", len);
-
-            if (len != 4 && len != 5) {
-                // invalid length, drop packet
-                bytes.remove(0);
-                analyzeBuffer();
-            } else if (bytes.size() > len + 1) {
-                // we have a complete packet in the buffer, analyze it
-                // third byte should be response type byte (has to be either EASY_CONFIRM or EASY_ACK)
-                byte respType = bytes.get(2);
-
-                synchronized (bytes) {
-                    if (respType == Response.EASY_CONFIRM) {
-                        logger.trace("response type is EASY_CONFIRM.");
-
-                        long val = bytes.get(0) + bytes.get(1) + bytes.get(2) + bytes.get(3) + bytes.get(4)
-                                + bytes.get(5);
-                        if (val % 256 == 0) {
-                            response = new EasyConfirm(bytes.get(3), bytes.get(4), bytes.get(5));
-                        } else {
-                            logger.warn("invalid response checksum. Skipping response.");
-                        }
-
-                        bytes.notify();
-                    } else if (respType == Response.EASY_ACK) {
-                        logger.trace("response type is EASY_ACK.");
-
-                        long val = bytes.get(0) + bytes.get(1) + bytes.get(2) + bytes.get(3) + bytes.get(4)
-                                + bytes.get(5) + bytes.get(6);
-                        if (val % 256 == 0) {
-                            response = new EasyAck(bytes.get(3), bytes.get(4), bytes.get(5), bytes.get(6));
-                        } else {
-                            logger.warn("invalid response checksum. Skipping response.");
-                        }
-
-                        bytes.notify();
-                    } else {
-                        logger.warn("invalid response type {}. Skipping response.", respType);
+        public DueCommandSet() {
+            super(new Comparator<Command>() {
+                @Override
+                public int compare(Command o1, Command o2) {
+                    if (o1.equals(o2)) {
+                        return 0;
                     }
-                }
 
-                bytes.remove(0);
-                analyzeBuffer();
+                    int d = o2.getPriority() - o1.getPriority();
+                    if (d < 0) {
+                        return -1;
+                    }
+
+                    if (d == 0 && o1.getDelay(TimeUnit.MILLISECONDS) < o2.getDelay(TimeUnit.MILLISECONDS)) {
+                        return -1;
+                    }
+                    return 1;
+                }
+            });
+        }
+
+        @Override
+        public boolean add(Command e) {
+            super.remove(e);
+            return super.add(e);
+        }
+    }
+
+    class CommandWorker extends Thread {
+        public int[] knownIds;
+        private final AtomicBoolean terminated = new AtomicBoolean();
+        private final int updateInterval;
+
+        private final BlockingQueue<Command> cmdQueue = new DelayQueue<Command>();
+
+        CommandWorker(int updateInterval) {
+            this.updateInterval = updateInterval;
+            setDaemon(true);
+        }
+
+        void startUpdates() throws IOException, InterruptedException {
+            Response r = null;
+            while (r == null) {
+                logger.debug("sending CHECK packet...");
+                r = connection.sendPacket(CommandUtil.createPacket(CommandType.CHECK));
+
+                if (r == null) {
+                    Thread.sleep(2000);
+                }
             }
+
+            knownIds = r.getChannelIds();
+            logger.debug("Worker found channels: {} ", Arrays.toString(knownIds));
+
+            for (int id : knownIds) {
+                logger.debug("adding INFO command for channel id {} to queue with a delay of 1000...", id);
+                cmdQueue.add(new DelayedCommand(CommandType.INFO, 1000, Command.FAST_INFO_PRIORITY, id));
+            }
+            start();
+        }
+
+        void terminateUpdates() {
+            terminated.set(true);
+
+            // add a NONE command to make the thread exit from the call to take()
+            cmdQueue.add(new Command(CommandType.NONE));
+        }
+
+        void executeCommand(CommandType command, int... channelIds) {
+            logger.debug("adding command {} for channel ids {} to queue...", command, Arrays.toString(channelIds));
+            cmdQueue.add(new Command(command, channelIds));
+        }
+
+        @Override
+        public void run() {
+            // list of due commands sorted by priority
+            final DueCommandSet dueCommands = new DueCommandSet();
+
+            logger.debug("worker started.");
+            while (!terminated.get()) {
+                try {
+                    // in case we have no commands that are currently due, wait for a new one
+                    if (dueCommands.size() == 0) {
+                        logger.debug("No due commands, invoking take on queue...");
+                        dueCommands.add(cmdQueue.take());
+                        logger.trace("take returned {}", dueCommands.first());
+                    }
+                    if (!terminated.get()) {
+                        // take all commands that are due from the queue
+                        logger.trace("Draining all available commands...");
+                        Command cmd;
+                        int drainCount = 0;
+                        while ((cmd = cmdQueue.poll()) != null) {
+                            drainCount++;
+                            dueCommands.remove(cmd);
+                            dueCommands.add(cmd);
+                        }
+                        logger.trace("Drained {} commands, active queue size is {}, queue size is {}", drainCount,
+                                dueCommands.size(), cmdQueue.size());
+
+                        // process the command with the highest priority
+                        cmd = dueCommands.pollFirst();
+                        logger.debug("active command is {}", cmd);
+
+                        if (cmd.getCommandType() != CommandType.NONE) {
+                            Response response = null;
+                            if (cmd.getChannelIds().length > 1) {
+                                // this is a workaround for a bug in the stick firmware that does not
+                                // handle commands that are sent to multiple channels correctly
+                                for (int id : cmd.getChannelIds()) {
+                                    connection.sendPacket(CommandUtil.createPacket(cmd, id));
+                                }
+                            } else {
+                                response = connection.sendPacket(CommandUtil.createPacket(cmd));
+                            }
+
+                            if (response != null && response.hasStatus()) {
+                                for (int id : response.getChannelIds()) {
+                                    notifyListeners(id, response.getStatus());
+                                }
+                            }
+
+                            if (cmd instanceof TimedCommand) {
+                                long delay = 1000 * ((TimedCommand) cmd).getDuration();
+                                logger.debug("adding timed command STOP for channel ids {} to queue with delay {}...",
+                                        cmd.getChannelIds(), delay);
+
+                                cmdQueue.add(new DelayedCommand(CommandType.STOP, delay, Command.TIMED_PRIORITY,
+                                        cmd.getChannelIds()));
+                            } else if (response != null && response.isMoving()) {
+                                logger.debug("adding timed command INFO for channel ids {} to queue with delay 2000...",
+                                        cmd.getChannelIds());
+
+                                cmdQueue.add(new DelayedCommand(CommandType.INFO, 2000, Command.FAST_INFO_PRIORITY,
+                                        cmd.getChannelIds()));
+                            } else if (cmd.getCommandType() == CommandType.INFO) {
+                                logger.debug("adding timed command INFO for channel ids {} to queue with delay {}...",
+                                        cmd.getChannelIds(), updateInterval * 1000);
+
+                                cmdQueue.add(new DelayedCommand(CommandType.INFO, updateInterval * 1000,
+                                        Command.INFO_PRIORITY, cmd.getChannelIds()));
+                            }
+                        } else {
+                            logger.trace("ignoring NONE command.");
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    logger.error("Got interrupt while waiting for next command time", e);
+                    Thread.currentThread().interrupt();
+                } catch (IOException e) {
+                    logger.error("Got IOException communicating with the stick", e);
+                    // TODO Auto-generated catch block
+                } catch (Throwable t) {
+                    logger.error("Unhandled throwable", t);
+                }
+            }
+
+            logger.debug("worker finished.");
         }
     }
 }

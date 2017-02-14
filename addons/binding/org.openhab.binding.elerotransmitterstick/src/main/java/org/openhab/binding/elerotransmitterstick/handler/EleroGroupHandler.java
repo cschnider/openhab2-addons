@@ -8,14 +8,11 @@
  */
 package org.openhab.binding.elerotransmitterstick.handler;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
+import java.util.Arrays;
 
 import org.eclipse.smarthome.core.thing.Thing;
 import org.eclipse.smarthome.core.thing.ThingStatus;
 import org.openhab.binding.elerotransmitterstick.config.GroupConfig;
-import org.openhab.binding.elerotransmitterstick.handler.EleroTransmitterStickHandler.Channel;
 import org.openhab.binding.elerotransmitterstick.stick.ResponseStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +26,7 @@ import org.slf4j.LoggerFactory;
 public class EleroGroupHandler extends EleroChannelHandler {
     private final Logger logger = LoggerFactory.getLogger(EleroGroupHandler.class);
 
-    List<Channel> channels;
+    ResponseStatus[] stati;
 
     public EleroGroupHandler(Thing thing) {
         super(thing);
@@ -39,14 +36,15 @@ public class EleroGroupHandler extends EleroChannelHandler {
     protected void setChannelIds() {
         GroupConfig config = getConfig().as(GroupConfig.class);
         String[] idsArr = config.channelids.split(",");
+        int[] ids = new int[idsArr.length];
+        int idx = 0;
 
-        ArrayList<Integer> ids = new ArrayList<>();
         for (String idStr : idsArr) {
             try {
                 int id = Integer.parseInt(idStr);
 
                 if (id > 0 && id < 16) {
-                    ids.add(id);
+                    ids[idx++] = id;
                 } else {
                     throw new IllegalArgumentException(
                             "id " + idStr + " specified in thing configuration is out of range 1..15");
@@ -56,24 +54,28 @@ public class EleroGroupHandler extends EleroChannelHandler {
             }
         }
 
-        channelIds = ids.toArray(new Integer[ids.size()]);
-        channels = bridge.getChannels(channelIds);
+        channelIds = Arrays.copyOfRange(ids, 0, idx - 1);
+        stati = new ResponseStatus[channelIds.length];
     }
 
     @Override
-    public void statusChanged(ResponseStatus status) {
+    public void statusChanged(int channelId, ResponseStatus status) {
         logger.debug("Received updated state {} for thing {}", status, getThing().getUID().toString());
 
-        HashSet<ResponseStatus> stati = new HashSet<>();
-        for (Channel c : channels) {
-            stati.add(c.getStatus());
+        boolean same = true;
+        for (int i = 0; i < channelIds.length; i++) {
+            if (channelIds[i] == channelId) {
+                stati[i] = status;
+            } else {
+                same = same && status == stati[i];
+            }
         }
 
         // if all channels have the same status use this as the group status. otherwise return NO_INFORMATION
-        if (stati.size() == 1) {
-            super.statusChanged(stati.iterator().next());
+        if (same) {
+            super.statusChanged(channelId, status);
         } else {
-            super.statusChanged(ResponseStatus.NO_INFORMATION);
+            super.statusChanged(channelId, ResponseStatus.NO_INFORMATION);
         }
 
         updateStatus(ThingStatus.ONLINE);

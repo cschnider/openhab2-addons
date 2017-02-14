@@ -17,5 +17,5 @@ import org.openhab.binding.elerotransmitterstick.stick.ResponseStatus;
  * @author Volker Bier - Initial contribution
  */
 public interface StatusListener {
-    void statusChanged(ResponseStatus status);
+    void statusChanged(int channelId, ResponseStatus status);
 }

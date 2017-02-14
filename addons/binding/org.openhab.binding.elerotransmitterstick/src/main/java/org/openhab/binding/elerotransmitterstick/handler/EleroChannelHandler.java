@@ -24,7 +24,6 @@ import org.eclipse.smarthome.core.thing.binding.BaseThingHandler;
 import org.eclipse.smarthome.core.types.Command;
 import org.eclipse.smarthome.core.types.RefreshType;
 import org.openhab.binding.elerotransmitterstick.stick.CommandType;
-import org.openhab.binding.elerotransmitterstick.stick.EasyAck;
 import org.openhab.binding.elerotransmitterstick.stick.ResponseStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,7 +37,7 @@ import org.slf4j.LoggerFactory;
 public class EleroChannelHandler extends BaseThingHandler implements StatusListener {
     private final Logger logger = LoggerFactory.getLogger(EleroChannelHandler.class);
 
-    protected Integer[] channelIds;
+    protected int[] channelIds;
     protected EleroTransmitterStickHandler bridge;
 
     public EleroChannelHandler(Thing thing) {
@@ -50,7 +49,7 @@ public class EleroChannelHandler extends BaseThingHandler implements StatusListe
         bridge = (EleroTransmitterStickHandler) getBridge().getHandler();
 
         setChannelIds();
-        for (Integer channelId : channelIds) {
+        for (int channelId : channelIds) {
             bridge.addStatusListener(channelId, this);
         }
         updateStatus(ThingStatus.ONLINE);
@@ -58,7 +57,7 @@ public class EleroChannelHandler extends BaseThingHandler implements StatusListe
 
     protected void setChannelIds() {
         String channelIdStr = getThing().getProperties().get(PROPERTY_CHANNEL_ID);
-        channelIds = new Integer[] { Integer.parseInt(channelIdStr) };
+        channelIds = new int[] { Integer.parseInt(channelIdStr) };
     }
 
     @Override
@@ -72,33 +71,22 @@ public class EleroChannelHandler extends BaseThingHandler implements StatusListe
     public void handleCommand(ChannelUID channelUID, Command command) {
         logger.debug("Received command {} for channel {}", command, channelUID);
         try {
-            EasyAck ack = null;
             if (channelUID.getIdWithoutGroup().equals(CONTROL_CHANNEL)) {
                 if (command == UpDownType.UP) {
-                    ack = bridge.getStick().sendEasySend(CommandType.UP, channelIds);
+                    bridge.getStick().sendCommand(CommandType.UP, channelIds);
                 } else if (command == UpDownType.DOWN) {
-                    ack = bridge.getStick().sendEasySend(CommandType.DOWN, channelIds);
+                    bridge.getStick().sendCommand(CommandType.DOWN, channelIds);
                 } else if (command == StopMoveType.STOP) {
-                    ack = bridge.getStick().sendEasySend(CommandType.STOP, channelIds);
+                    bridge.getStick().sendCommand(CommandType.STOP, channelIds);
                 } else if (command instanceof PercentType) {
                     CommandType cmd = CommandType.getForPercent(((PercentType) command).intValue());
                     if (cmd != null) {
-                        ack = bridge.getStick().sendEasySend(cmd, channelIds);
+                        bridge.getStick().sendCommand(cmd, channelIds);
                     } else {
                         logger.warn("Unhandled command {}.", command);
                     }
                 } else if (command != RefreshType.REFRESH) {
                     logger.warn("Unhandled command {}", command);
-                }
-            }
-
-            if (ack != null) {
-                statusChanged(ack.getStatus());
-
-                // if we have an ack, then we have successfully send a command. now
-                // tell the bridge to poll the channel faster until movement has stopped
-                for (Integer channelId : channelIds) {
-                    bridge.triggerFastUpdate(channelId);
                 }
             }
         } catch (IOException e) {
@@ -108,7 +96,7 @@ public class EleroChannelHandler extends BaseThingHandler implements StatusListe
     }
 
     @Override
-    public void statusChanged(ResponseStatus status) {
+    public void statusChanged(int channelId, ResponseStatus status) {
         logger.debug("Received updated state {} for thing {}", status, getThing().getUID().toString());
 
         Channel sChan = getThing().getChannel(STATUS_CHANNEL);
@@ -117,8 +105,8 @@ public class EleroChannelHandler extends BaseThingHandler implements StatusListe
         }
 
         Channel rChan = getThing().getChannel(CONTROL_CHANNEL);
-        if (rChan != null && status.getPercentage() != -1) {
-            updateState(rChan.getUID(), new PercentType(status.getPercentage()));
+        if (rChan != null && ResponseStatus.getPercentageFor(status) != -1) {
+            updateState(rChan.getUID(), new PercentType(ResponseStatus.getPercentageFor(status)));
         }
 
         updateStatus(ThingStatus.ONLINE);

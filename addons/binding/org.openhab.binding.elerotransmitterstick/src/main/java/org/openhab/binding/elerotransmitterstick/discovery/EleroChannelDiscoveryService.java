@@ -10,7 +10,6 @@ package org.openhab.binding.elerotransmitterstick.discovery;
 
 import static org.openhab.binding.elerotransmitterstick.EleroTransmitterStickBindingConstants.*;
 
-import java.io.IOException;
 import java.util.Collections;
 
 import org.eclipse.smarthome.config.discovery.AbstractDiscoveryService;
@@ -18,7 +17,6 @@ import org.eclipse.smarthome.config.discovery.DiscoveryResult;
 import org.eclipse.smarthome.config.discovery.DiscoveryResultBuilder;
 import org.eclipse.smarthome.core.thing.ThingUID;
 import org.openhab.binding.elerotransmitterstick.handler.EleroTransmitterStickHandler;
-import org.openhab.binding.elerotransmitterstick.stick.EasyConfirm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,18 +57,18 @@ public class EleroChannelDiscoveryService extends AbstractDiscoveryService {
             return;
         }
 
-        EasyConfirm c = null;
+        int[] channelIds = null;
 
         try {
-            while (c == null) {
-                c = bridge.getStick().sendEasyCheck();
+            while (channelIds == null) {
+                channelIds = bridge.getStick().getKnownIds();
 
-                if (c == null) {
+                if (channelIds == null) {
                     Thread.sleep(2000);
                 }
             }
 
-            for (int id : c.getChannelIds()) {
+            for (int id : channelIds) {
                 ThingUID sensorThing = new ThingUID(THING_TYPE_ELERO_CHANNEL, String.valueOf(id));
 
                 DiscoveryResult discoveryResult = DiscoveryResultBuilder.create(sensorThing).withLabel("Channel " + id)
@@ -81,8 +79,6 @@ public class EleroChannelDiscoveryService extends AbstractDiscoveryService {
             logger.warn("got interrupt while waiting for answer from elero stick {}",
                     bridge.getThing().getUID().getId());
             Thread.currentThread().interrupt();
-        } catch (IOException e) {
-            logger.error("Failed to query channels from elero stick", e);
         }
     }
 }
