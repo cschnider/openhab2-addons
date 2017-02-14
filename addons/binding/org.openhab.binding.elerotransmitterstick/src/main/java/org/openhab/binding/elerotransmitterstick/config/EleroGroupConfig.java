@@ -11,10 +11,10 @@ package org.openhab.binding.elerotransmitterstick.config;
 import org.openhab.binding.elerotransmitterstick.handler.EleroGroupHandler;
 
 /**
- * The {@link GroupConfig} holds configuration data of a {@link EleroGroupHandler}
+ * The {@link EleroGroupConfig} holds configuration data of a {@link EleroGroupHandler}
  *
  * @author Volker Bier - Initial contribution
  */
-public class GroupConfig {
+public class EleroGroupConfig {
     public String channelids;
 }

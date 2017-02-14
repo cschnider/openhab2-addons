@@ -12,7 +12,7 @@ import java.util.Arrays;
 
 import org.eclipse.smarthome.core.thing.Thing;
 import org.eclipse.smarthome.core.thing.ThingStatus;
-import org.openhab.binding.elerotransmitterstick.config.GroupConfig;
+import org.openhab.binding.elerotransmitterstick.config.EleroGroupConfig;
 import org.openhab.binding.elerotransmitterstick.stick.ResponseStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +34,7 @@ public class EleroGroupHandler extends EleroChannelHandler {
 
     @Override
     protected void setChannelIds() {
-        GroupConfig config = getConfig().as(GroupConfig.class);
+        EleroGroupConfig config = getConfig().as(EleroGroupConfig.class);
         String[] idsArr = config.channelids.split(",");
         int[] ids = new int[idsArr.length];
         int idx = 0;
