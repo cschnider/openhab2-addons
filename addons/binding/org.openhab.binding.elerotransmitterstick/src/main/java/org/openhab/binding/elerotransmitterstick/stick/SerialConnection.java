@@ -59,13 +59,12 @@ public class SerialConnection {
                     serialPort.notifyOnDataAvailable(true);
                 } catch (UnsupportedCommOperationException | TooManyListenersException ex) {
                     close();
-                    throw ex;
+                    throw new ConnectException(ex);
                 }
             } else {
                 logger.debug("Serial connection to port {} is already open!", portName);
             }
-        } catch (NoSuchPortException | PortInUseException | UnsupportedCommOperationException
-                | TooManyListenersException ex) {
+        } catch (NoSuchPortException | PortInUseException ex) {
             throw new ConnectException(ex);
         }
     }

@@ -34,8 +34,12 @@ public class EleroGroupHandler extends EleroChannelHandler {
 
     @Override
     protected void setChannelIds() {
-        EleroGroupConfig config = getConfig().as(EleroGroupConfig.class);
-        String[] idsArr = config.channelids.split(",");
+        channelIds = parseChannelIds(getConfig().as(EleroGroupConfig.class).channelids);
+        stati = new ResponseStatus[channelIds.length];
+    }
+
+    public static int[] parseChannelIds(String channelids) {
+        String[] idsArr = channelids.split(",");
         int[] ids = new int[idsArr.length];
         int idx = 0;
 
@@ -54,8 +58,7 @@ public class EleroGroupHandler extends EleroChannelHandler {
             }
         }
 
-        channelIds = Arrays.copyOfRange(ids, 0, idx - 1);
-        stati = new ResponseStatus[channelIds.length];
+        return Arrays.copyOfRange(ids, 0, idx);
     }
 
     @Override

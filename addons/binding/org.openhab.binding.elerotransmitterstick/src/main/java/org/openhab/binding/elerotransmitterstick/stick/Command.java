@@ -21,32 +21,6 @@ public class Command implements Delayed {
     }
 
     @Override
-    public int hashCode() {
-        final int prime = 31;
-        int result = 1;
-        result = prime * result + Arrays.hashCode(channelId);
-        return result;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-        if (obj == null) {
-            return false;
-        }
-        if (getClass() != obj.getClass()) {
-            return false;
-        }
-        Command other = (Command) obj;
-        if (!Arrays.equals(channelId, other.channelId)) {
-            return false;
-        }
-        return true;
-    }
-
-    @Override
     public String toString() {
         return "Command " + commandType + " on channels " + Arrays.toString(channelId) + " with priority " + priority;
     }

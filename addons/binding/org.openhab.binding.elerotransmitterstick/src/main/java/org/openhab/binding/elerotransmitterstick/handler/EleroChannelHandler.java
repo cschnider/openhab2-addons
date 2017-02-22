@@ -85,8 +85,8 @@ public class EleroChannelHandler extends BaseThingHandler implements StatusListe
                     } else {
                         logger.warn("Unhandled command {}.", command);
                     }
-                } else if (command != RefreshType.REFRESH) {
-                    logger.warn("Unhandled command {}", command);
+                } else if (command == RefreshType.REFRESH) {
+                    bridge.getStick().requestUpdate(channelIds);
                 }
             }
         } catch (IOException e) {

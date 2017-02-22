@@ -3,8 +3,11 @@ package org.openhab.binding.elerotransmitterstick.stick;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.TreeSet;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.DelayQueue;
@@ -60,6 +63,10 @@ public class TransmitterStick {
         worker.executeCommand(cmd, channelIds);
     }
 
+    public void requestUpdate(int... channelIds) {
+        worker.requestUpdate(channelIds);
+    }
+
     public void addStatusListener(int channelId, StatusListener listener) {
         synchronized (allListeners) {
             ArrayList<StatusListener> listeners = allListeners.get(channelId);
@@ -95,11 +102,46 @@ public class TransmitterStick {
         }
     }
 
+    /**
+     * Make sure we have
+     * - only one INFO for the same channel ids
+     * - only one other command for the same channel ids
+     */
+    private static boolean prepareAddition(Command newCmd, Collection<Command> coll) {
+        Iterator<Command> queuedCommands = coll.iterator();
+        while (queuedCommands.hasNext()) {
+            Command existingCmd = queuedCommands.next();
+
+            if (Arrays.equals(newCmd.getChannelIds(), existingCmd.getChannelIds())) {
+                // remove pending INFOs for same channel ids
+                if (newCmd.getCommandType() == CommandType.INFO && existingCmd.getCommandType() == CommandType.INFO) {
+                    if (existingCmd.getPriority() < newCmd.priority) {
+                        // we have an older INFO command with same or lower priority, remove
+                        queuedCommands.remove();
+                    } else {
+                        // existing has higher priority, skip addition
+                        return false;
+                    }
+                }
+
+                if (newCmd.getCommandType() != CommandType.INFO && existingCmd.getCommandType() != CommandType.INFO) {
+                    // we have an older command for the same channels, remove
+                    queuedCommands.remove();
+                }
+            }
+        }
+
+        return true;
+    }
+
     static class DueCommandSet extends TreeSet<Command> {
         private static final long serialVersionUID = -3216360253151368826L;
 
         public DueCommandSet() {
             super(new Comparator<Command>() {
+                /**
+                 * Due commands are sorted by priority first and then by delay.
+                 */
                 @Override
                 public int compare(Command o1, Command o2) {
                     if (o1.equals(o2)) {
@@ -121,17 +163,30 @@ public class TransmitterStick {
 
         @Override
         public boolean add(Command e) {
-            super.remove(e);
-            return super.add(e);
+            if (TransmitterStick.prepareAddition(e, this)) {
+                return super.add(e);
+            }
+
+            return false;
         }
     }
 
     class CommandWorker extends Thread {
-        public int[] knownIds;
+        int[] knownIds;
+        private HashSet<Integer> validIds = new HashSet<>();
         private final AtomicBoolean terminated = new AtomicBoolean();
         private final int updateInterval;
 
-        private final BlockingQueue<Command> cmdQueue = new DelayQueue<Command>();
+        private final BlockingQueue<Command> cmdQueue = new DelayQueue<Command>() {
+            @Override
+            public boolean add(Command e) {
+                if (TransmitterStick.prepareAddition(e, this)) {
+                    return super.add(e);
+                }
+
+                return false;
+            }
+        };
 
         CommandWorker(int updateInterval) {
             this.updateInterval = updateInterval;
@@ -153,9 +208,9 @@ public class TransmitterStick {
             logger.debug("Worker found channels: {} ", Arrays.toString(knownIds));
 
             for (int id : knownIds) {
-                logger.debug("adding INFO command for channel id {} to queue with a delay of 1000...", id);
-                cmdQueue.add(new DelayedCommand(CommandType.INFO, 1000, Command.FAST_INFO_PRIORITY, id));
+                validIds.add(id);
             }
+
             start();
         }
 
@@ -166,9 +221,30 @@ public class TransmitterStick {
             cmdQueue.add(new Command(CommandType.NONE));
         }
 
+        void requestUpdate(int... channelIds) {
+            // this is a workaround for a bug in the stick firmware that does not
+            // handle commands that are sent to multiple channels correctly
+            if (channelIds.length > 1) {
+                for (int channelId : channelIds) {
+                    requestUpdate(channelId);
+                }
+            } else if (channelIds.length == 1) {
+                logger.debug("adding INFO command for channel id {} to queue...", Arrays.toString(channelIds));
+                cmdQueue.add(new DelayedCommand(CommandType.INFO, 0, Command.FAST_INFO_PRIORITY, channelIds));
+            }
+        }
+
         void executeCommand(CommandType command, int... channelIds) {
-            logger.debug("adding command {} for channel ids {} to queue...", command, Arrays.toString(channelIds));
-            cmdQueue.add(new Command(command, channelIds));
+            // this is a workaround for a bug in the stick firmware that does not
+            // handle commands that are sent to multiple channels correctly
+            if (channelIds.length > 1) {
+                for (int channelId : channelIds) {
+                    executeCommand(command, channelId);
+                }
+            } else if (channelIds.length == 1) {
+                logger.debug("adding command {} for channel ids {} to queue...", command, Arrays.toString(channelIds));
+                cmdQueue.add(new Command(command, channelIds));
+            }
         }
 
         @Override
@@ -203,16 +279,7 @@ public class TransmitterStick {
                         logger.debug("active command is {}", cmd);
 
                         if (cmd.getCommandType() != CommandType.NONE) {
-                            Response response = null;
-                            if (cmd.getChannelIds().length > 1) {
-                                // this is a workaround for a bug in the stick firmware that does not
-                                // handle commands that are sent to multiple channels correctly
-                                for (int id : cmd.getChannelIds()) {
-                                    connection.sendPacket(CommandUtil.createPacket(cmd, id));
-                                }
-                            } else {
-                                response = connection.sendPacket(CommandUtil.createPacket(cmd));
-                            }
+                            Response response = connection.sendPacket(CommandUtil.createPacket(cmd));
 
                             if (response != null && response.hasStatus()) {
                                 for (int id : response.getChannelIds()) {
