@@ -22,36 +22,31 @@ import org.slf4j.LoggerFactory;
 public class TransmitterStick {
     private final Logger logger = LoggerFactory.getLogger(TransmitterStick.class);
 
-    private final SerialConnection connection;
     private final CommandWorker worker;
 
     private final HashMap<Integer, ArrayList<StatusListener>> allListeners = new HashMap<>();
 
+    private final StickListener listener;
+
     private EleroTransmitterStickConfig config;
 
-    public TransmitterStick(EleroTransmitterStickConfig stickConfig) {
+    public TransmitterStick(EleroTransmitterStickConfig stickConfig, StickListener l) {
         config = stickConfig;
-        connection = new SerialConnection(config.portName);
-        worker = new CommandWorker(config.updateInterval);
+        worker = new CommandWorker();
+
+        listener = l;
     }
 
-    public void initialize() throws ConnectException {
+    public synchronized void initialize() {
         logger.debug("Initializing Transmitter Stick...");
-        connection.open();
-        try {
-            worker.startUpdates();
-        } catch (Exception e) {
-            connection.close();
-            throw new ConnectException("Failed to query channels from stick", e);
-        }
+        worker.start();
         logger.debug("Transmitter Stick initialized, worker running.");
     }
 
-    public void dispose() {
+    public synchronized void dispose() {
         logger.debug("Disposing Transmitter Stick...");
         allListeners.clear();
         worker.terminateUpdates();
-        connection.close();
         logger.debug("Transmitter Stick disposed.");
     }
 
@@ -59,7 +54,7 @@ public class TransmitterStick {
         return worker.knownIds;
     }
 
-    public void sendCommand(CommandType cmd, int... channelIds) throws IOException {
+    public void sendCommand(CommandType cmd, int... channelIds) {
         worker.executeCommand(cmd, channelIds);
     }
 
@@ -176,6 +171,7 @@ public class TransmitterStick {
         private HashSet<Integer> validIds = new HashSet<>();
         private final AtomicBoolean terminated = new AtomicBoolean();
         private final int updateInterval;
+        private final SerialConnection connection;
 
         private final BlockingQueue<Command> cmdQueue = new DelayQueue<Command>() {
             @Override
@@ -188,34 +184,15 @@ public class TransmitterStick {
             }
         };
 
-        CommandWorker(int updateInterval) {
-            this.updateInterval = updateInterval;
+        CommandWorker() {
+            connection = new SerialConnection(config.portName);
+            updateInterval = config.updateInterval;
             setDaemon(true);
-        }
-
-        void startUpdates() throws IOException, InterruptedException {
-            Response r = null;
-            while (r == null) {
-                logger.debug("sending CHECK packet...");
-                r = connection.sendPacket(CommandUtil.createPacket(CommandType.CHECK));
-
-                if (r == null) {
-                    Thread.sleep(2000);
-                }
-            }
-
-            knownIds = r.getChannelIds();
-            logger.debug("Worker found channels: {} ", Arrays.toString(knownIds));
-
-            for (int id : knownIds) {
-                validIds.add(id);
-            }
-
-            start();
         }
 
         void terminateUpdates() {
             terminated.set(true);
+            connection.close();
 
             // add a NONE command to make the thread exit from the call to take()
             cmdQueue.add(new Command(CommandType.NONE));
@@ -252,8 +229,45 @@ public class TransmitterStick {
             // list of due commands sorted by priority
             final DueCommandSet dueCommands = new DueCommandSet();
 
+            logger.debug("querying available channels...");
+            while (!terminated.get() && knownIds == null) {
+                waitConnected();
+
+                try {
+                    Response r = null;
+                    while (r == null && !terminated.get() && connection.isOpen()) {
+                        logger.debug("sending CHECK packet...");
+                        r = connection.sendPacket(CommandUtil.createPacket(CommandType.CHECK));
+
+                        if (r == null) {
+                            Thread.sleep(2000);
+                        }
+                    }
+
+                    if (r != null) {
+                        knownIds = r.getChannelIds();
+                        logger.debug("Worker found channels: {} ", Arrays.toString(knownIds));
+
+                        for (int id : knownIds) {
+                            validIds.add(id);
+                        }
+
+                        requestUpdate(knownIds);
+                    }
+                } catch (IOException e) {
+                    logger.error("Got IOException communicating with the stick", e);
+                    listener.connectionDropped(e);
+                    connection.close();
+                } catch (InterruptedException e) {
+                    logger.error("Got interrupt while waiting for next command time", e);
+                    Thread.currentThread().interrupt();
+                }
+            }
+
             logger.debug("worker started.");
             while (!terminated.get()) {
+                waitConnected();
+
                 try {
                     // in case we have no commands that are currently due, wait for a new one
                     if (dueCommands.size() == 0) {
@@ -261,6 +275,7 @@ public class TransmitterStick {
                         dueCommands.add(cmdQueue.take());
                         logger.trace("take returned {}", dueCommands.first());
                     }
+
                     if (!terminated.get()) {
                         // take all commands that are due from the queue
                         logger.trace("Draining all available commands...");
@@ -275,11 +290,13 @@ public class TransmitterStick {
                                 dueCommands.size(), cmdQueue.size());
 
                         // process the command with the highest priority
-                        cmd = dueCommands.pollFirst();
+                        cmd = dueCommands.first();
                         logger.debug("active command is {}", cmd);
 
                         if (cmd.getCommandType() != CommandType.NONE) {
                             Response response = connection.sendPacket(CommandUtil.createPacket(cmd));
+                            // remove the command now we know it has been correctly processed
+                            dueCommands.pollFirst();
 
                             if (response != null && response.hasStatus()) {
                                 for (int id : response.getChannelIds()) {
@@ -316,7 +333,8 @@ public class TransmitterStick {
                     Thread.currentThread().interrupt();
                 } catch (IOException e) {
                     logger.error("Got IOException communicating with the stick", e);
-                    // TODO Auto-generated catch block
+                    listener.connectionDropped(e);
+                    connection.close();
                 } catch (Throwable t) {
                     logger.error("Unhandled throwable", t);
                 }
@@ -324,5 +342,35 @@ public class TransmitterStick {
 
             logger.debug("worker finished.");
         }
+
+        private void waitConnected() {
+            if (!connection.isOpen()) {
+                while (!connection.isOpen() && !terminated.get()) {
+                    try {
+                        connection.open();
+                        listener.connectionEstablished();
+                    } catch (ConnectException e1) {
+                        listener.connectionDropped(e1);
+                    }
+
+                    if (!connection.isOpen() && !terminated.get()) {
+                        try {
+                            Thread.sleep(2000);
+                        } catch (InterruptedException e) {
+                            logger.error("Got interrupt while waiting for next command time", e);
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                }
+            }
+
+            logger.trace("finished waiting. connection open={}, terminated={}", connection.isOpen(), terminated.get());
+        }
+    }
+
+    public interface StickListener {
+        void connectionEstablished();
+
+        void connectionDropped(Exception e);
     }
 }

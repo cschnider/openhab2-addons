@@ -28,10 +28,10 @@ public class SerialConnection {
         this.portName = portName;
     }
 
-    public void open() throws ConnectException {
+    public synchronized void open() throws ConnectException {
         try {
             if (!open) {
-                logger.info("Opening serial connection to port {}...", portName);
+                logger.debug("Trying to open serial connection to port {}...", portName);
 
                 CommPortIdentifier portIdentifier;
 
@@ -39,6 +39,7 @@ public class SerialConnection {
                     portIdentifier = CommPortIdentifier.getPortIdentifier(portName);
                     serialPort = portIdentifier.open("openhab", 3000);
                     open = true;
+                    logger.info("Serial connection to port {} opened.", portName);
 
                     serialPort.setSerialPortParams(38400, SerialPort.DATABITS_8, SerialPort.STOPBITS_1,
                             SerialPort.PARITY_NONE);
@@ -61,52 +62,57 @@ public class SerialConnection {
                     close();
                     throw new ConnectException(ex);
                 }
-            } else {
-                logger.debug("Serial connection to port {} is already open!", portName);
             }
         } catch (NoSuchPortException | PortInUseException ex) {
             throw new ConnectException(ex);
         }
     }
 
-    public void close() {
+    public synchronized boolean isOpen() {
+        return open;
+    }
+
+    public synchronized void close() {
         if (open) {
             logger.info("Closing serial connection to port {}...", portName);
 
             serialPort.close();
             open = false;
-        } else {
-            logger.debug("Serial connection to port {} is already closed or has active listeners!", portName);
         }
     }
 
     // send a packet to the stick and wait for the response
     public synchronized Response sendPacket(CommandPacket p) throws IOException {
-        Response r = response;
+        if (open) {
+            Response r = response;
 
-        synchronized (bytes) {
-            response = null;
-            logger.debug("Writing packet to stick: {}", p);
-            serialPort.getOutputStream().write(p.getBytes());
+            synchronized (bytes) {
+                response = null;
+                logger.debug("Writing packet to stick: {}", p);
+                serialPort.getOutputStream().write(p.getBytes());
 
-            if (r != null) {
-                return r;
+                if (r != null) {
+                    return r;
+                }
+
+                final long responseTimeout = p.getResponseTimeout();
+                try {
+                    logger.trace("Waiting {} ms for answer from stick...", responseTimeout);
+                    bytes.wait(responseTimeout);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+
+                r = response;
+                response = null;
             }
 
-            final long responseTimeout = p.getResponseTimeout();
-            try {
-                logger.trace("Waiting {} ms for answer from stick...", responseTimeout);
-                bytes.wait(responseTimeout);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-
-            r = response;
-            response = null;
+            logger.debug("Stick answered {} for packet {}.", r, p);
+            return r;
         }
 
-        logger.debug("Stick answered {} for packet {}.", r, p);
-        return r;
+        logger.warn("Stick skipped packet {}. Connection is not open.", p);
+        return null;
     }
 
     private void parseInput() throws IOException {

@@ -17,6 +17,7 @@ import org.eclipse.smarthome.core.thing.binding.BridgeHandler;
 import org.eclipse.smarthome.core.types.Command;
 import org.openhab.binding.elerotransmitterstick.config.EleroTransmitterStickConfig;
 import org.openhab.binding.elerotransmitterstick.stick.TransmitterStick;
+import org.openhab.binding.elerotransmitterstick.stick.TransmitterStick.StickListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,16 +53,19 @@ public class EleroTransmitterStickHandler extends BaseBridgeHandler implements B
     @Override
     public void initialize() {
         EleroTransmitterStickConfig config = getConfig().as(EleroTransmitterStickConfig.class);
-        try {
-            stick = new TransmitterStick(config);
-            stick.initialize();
 
-            updateStatus(ThingStatus.ONLINE);
-            logger.info("EleroTransmitterStickHandler for port {} is ONLINE.", config.portName);
-        } catch (Exception ex) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, ex.getMessage());
-            logger.info("EleroTransmitterStickHandler for port {} is OFFLINE.", config.portName);
-        }
+        stick = new TransmitterStick(config, new StickListener() {
+            @Override
+            public void connectionEstablished() {
+                updateStatus(ThingStatus.ONLINE);
+            }
+
+            @Override
+            public void connectionDropped(Exception e) {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, e.getMessage());
+            }
+        });
+        stick.initialize();
     }
 
     public TransmitterStick getStick() {

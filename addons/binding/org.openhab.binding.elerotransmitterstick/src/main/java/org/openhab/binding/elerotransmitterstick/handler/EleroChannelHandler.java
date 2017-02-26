@@ -10,8 +10,6 @@ package org.openhab.binding.elerotransmitterstick.handler;
 
 import static org.openhab.binding.elerotransmitterstick.EleroTransmitterStickBindingConstants.*;
 
-import java.io.IOException;
-
 import org.eclipse.smarthome.core.library.types.PercentType;
 import org.eclipse.smarthome.core.library.types.StopMoveType;
 import org.eclipse.smarthome.core.library.types.StringType;
@@ -20,6 +18,8 @@ import org.eclipse.smarthome.core.thing.Channel;
 import org.eclipse.smarthome.core.thing.ChannelUID;
 import org.eclipse.smarthome.core.thing.Thing;
 import org.eclipse.smarthome.core.thing.ThingStatus;
+import org.eclipse.smarthome.core.thing.ThingStatusDetail;
+import org.eclipse.smarthome.core.thing.ThingStatusInfo;
 import org.eclipse.smarthome.core.thing.binding.BaseThingHandler;
 import org.eclipse.smarthome.core.types.Command;
 import org.eclipse.smarthome.core.types.RefreshType;
@@ -52,7 +52,10 @@ public class EleroChannelHandler extends BaseThingHandler implements StatusListe
         for (int channelId : channelIds) {
             bridge.addStatusListener(channelId, this);
         }
-        updateStatus(ThingStatus.ONLINE);
+
+        if (bridge.getThing().getStatus() != ThingStatus.ONLINE) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
+        }
     }
 
     protected void setChannelIds() {
@@ -68,30 +71,35 @@ public class EleroChannelHandler extends BaseThingHandler implements StatusListe
     }
 
     @Override
+    public void bridgeStatusChanged(ThingStatusInfo bridgeStatusInfo) {
+        if (bridgeStatusInfo.getStatus() == ThingStatus.OFFLINE) {
+            logger.debug("Bridge for Elero channel handler for thing {} ({}) changed status to {}",
+                    getThing().getLabel(), getThing().getUID(), bridgeStatusInfo.getStatus().toString());
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
+        }
+    }
+
+    @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
         logger.debug("Received command {} for channel {}", command, channelUID);
-        try {
-            if (channelUID.getIdWithoutGroup().equals(CONTROL_CHANNEL)) {
-                if (command == UpDownType.UP) {
-                    bridge.getStick().sendCommand(CommandType.UP, channelIds);
-                } else if (command == UpDownType.DOWN) {
-                    bridge.getStick().sendCommand(CommandType.DOWN, channelIds);
-                } else if (command == StopMoveType.STOP) {
-                    bridge.getStick().sendCommand(CommandType.STOP, channelIds);
-                } else if (command instanceof PercentType) {
-                    CommandType cmd = CommandType.getForPercent(((PercentType) command).intValue());
-                    if (cmd != null) {
-                        bridge.getStick().sendCommand(cmd, channelIds);
-                    } else {
-                        logger.warn("Unhandled command {}.", command);
-                    }
-                } else if (command == RefreshType.REFRESH) {
-                    bridge.getStick().requestUpdate(channelIds);
+
+        if (channelUID.getIdWithoutGroup().equals(CONTROL_CHANNEL)) {
+            if (command == UpDownType.UP) {
+                bridge.getStick().sendCommand(CommandType.UP, channelIds);
+            } else if (command == UpDownType.DOWN) {
+                bridge.getStick().sendCommand(CommandType.DOWN, channelIds);
+            } else if (command == StopMoveType.STOP) {
+                bridge.getStick().sendCommand(CommandType.STOP, channelIds);
+            } else if (command instanceof PercentType) {
+                CommandType cmd = CommandType.getForPercent(((PercentType) command).intValue());
+                if (cmd != null) {
+                    bridge.getStick().sendCommand(cmd, channelIds);
+                } else {
+                    logger.warn("Unhandled command {}.", command);
                 }
+            } else if (command == RefreshType.REFRESH) {
+                bridge.getStick().requestUpdate(channelIds);
             }
-        } catch (IOException e) {
-            updateStatus(ThingStatus.OFFLINE);
-            logger.error("Failed to send command " + command + " to channel " + channelUID, e);
         }
     }
 
