@@ -76,6 +76,8 @@ public class SerialConnection {
         if (open) {
             logger.info("Closing serial connection to port {}...", portName);
 
+            serialPort.notifyOnDataAvailable(false);
+            serialPort.removeEventListener();
             serialPort.close();
             open = false;
         }
