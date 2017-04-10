@@ -121,7 +121,7 @@ public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
                 }
             } catch (IOException ex) {
                 if (isRunning) {
-                    logger.error("Error reading from TCP port " + port + "!", ex);
+                    logger.error("Error reading from TCP port {}!", port, ex);
                 }
             }
             logger.debug("Reader for TCP port {} finished...", port);
@@ -134,7 +134,7 @@ public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
                 socket.close();
                 inputReader.close();
             } catch (IOException ex) {
-                logger.error("Failed to close TCP port " + port + "!", ex);
+                logger.error("Failed to close TCP port {}!", port, ex);
             }
         }
     }
