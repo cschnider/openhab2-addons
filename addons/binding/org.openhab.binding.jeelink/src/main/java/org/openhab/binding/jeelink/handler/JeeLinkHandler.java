@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2014-2016 by the respective copyright holders.
+ * Copyright (c) 2010-2017 by the respective copyright holders.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -45,7 +45,7 @@ public class JeeLinkHandler extends BaseBridgeHandler implements BridgeHandler {
 
             String initCommands = cfg.initCommands;
             if (initCommands != null && !initCommands.trim().isEmpty()) {
-                logger.info("Setting init commands for port {}: {}", connection.getPort(), initCommands);
+                logger.debug("Setting init commands for port {}: {}", connection.getPort(), initCommands);
                 connection.setInitCommands(initCommands);
             }
 
@@ -53,12 +53,12 @@ public class JeeLinkHandler extends BaseBridgeHandler implements BridgeHandler {
             for (JeeLinkReadingConverter<?> cnv : converters) {
                 connection.addReadingConverter(cnv);
             }
-            logger.info("updating JeeLinkHandler for port {} to be ONLINE...", connection.getPort());
+            logger.debug("updating JeeLinkHandler for port {} to be ONLINE...", connection.getPort());
             updateStatus(ThingStatus.ONLINE);
-            logger.info("JeeLinkHandler for port {} is ONLINE.", connection.getPort());
-        } catch (Exception ex) {
+            logger.debug("JeeLinkHandler for port {} is ONLINE.", connection.getPort());
+        } catch (java.net.ConnectException | ConnectException ex) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, ex.getMessage());
-            logger.info("JeeLinkHandler for port {} is OFFLINE.", connection.getPort());
+            logger.debug("JeeLinkHandler for port {} is OFFLINE.", connection.getPort());
         }
     }
 

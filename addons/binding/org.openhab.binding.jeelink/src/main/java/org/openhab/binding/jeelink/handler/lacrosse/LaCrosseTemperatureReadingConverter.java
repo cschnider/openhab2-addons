@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2014-2016 by the respective copyright holders.
+ * Copyright (c) 2010-2017 by the respective copyright holders.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -34,9 +34,9 @@ public class LaCrosseTemperatureReadingConverter extends JeeLinkReadingConverter
             if (matcher.matches()) {
                 // Format
                 //
-                // OK 9 56 1 4 156 37 ID = 56 T: 18.0 H: 37 no NewBatt
-                // OK 9 49 1 4 182 54 ID = 49 T: 20.6 H: 54 no NewBatt
-                // OK 9 55 129 4 192 56 ID = 55 T: 21.6 H: 56 WITH NewBatt
+                // OK 9 56 1 4 156 37 (ID = 56 T: 18.0 H: 37 no NewBatt)
+                // OK 9 49 1 4 182 54 (ID = 49 T: 20.6 H: 54 no NewBatt)
+                // OK 9 55 129 4 192 56 (ID = 55 T: 21.6 H: 56 WITH NewBatt)
                 // OK 9 ID XXX XXX XXX XXX
                 // | | | | | | |
                 // | | | | | | --- Humidity incl. WeakBatteryFlag

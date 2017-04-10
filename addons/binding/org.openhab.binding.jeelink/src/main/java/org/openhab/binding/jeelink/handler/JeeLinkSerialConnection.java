@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2014-2016 by the respective copyright holders.
+ * Copyright (c) 2010-2017 by the respective copyright holders.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -68,39 +68,36 @@ public class JeeLinkSerialConnection extends AbstractJeeLinkConnection {
 
                 CommPortIdentifier portIdentifier;
 
-                try {
-                    portIdentifier = CommPortIdentifier.getPortIdentifier(port);
-                    serialPort = portIdentifier.open("openhab", 3000);
-                    open = true;
+                portIdentifier = CommPortIdentifier.getPortIdentifier(port);
+                serialPort = portIdentifier.open("openhab", 3000);
+                open = true;
 
-                    serialPort.setSerialPortParams(baudRate, SerialPort.DATABITS_8, SerialPort.STOPBITS_1,
-                            SerialPort.PARITY_NONE);
+                serialPort.setSerialPortParams(baudRate, SerialPort.DATABITS_8, SerialPort.STOPBITS_1,
+                        SerialPort.PARITY_NONE);
 
-                    final BufferedReader input = new BufferedReader(new InputStreamReader(serialPort.getInputStream()));
+                final BufferedReader input = new BufferedReader(new InputStreamReader(serialPort.getInputStream()));
 
-                    serialPort.addEventListener(new SerialPortEventListener() {
-                        @Override
-                        public void serialEvent(SerialPortEvent event) {
-                            try {
-                                if (event.getEventType() == SerialPortEvent.DATA_AVAILABLE) {
-                                    propagateLine(input.readLine());
-                                }
-                            } catch (IOException ex) {
-                                logger.error("IOException reading from port {}!", port);
+                serialPort.addEventListener(new SerialPortEventListener() {
+                    @Override
+                    public void serialEvent(SerialPortEvent event) {
+                        try {
+                            if (event.getEventType() == SerialPortEvent.DATA_AVAILABLE) {
+                                propagateLine(input.readLine());
                             }
+                        } catch (IOException ex) {
+                            logger.error("IOException reading from port {}!", port, ex);
                         }
-                    });
+                    }
+                });
 
-                    serialPort.notifyOnDataAvailable(true);
-                } catch (UnsupportedCommOperationException | IOException | TooManyListenersException ex) {
-                    closeConnection();
-                    throw ex;
-                }
+                serialPort.notifyOnDataAvailable(true);
             } else {
                 logger.debug("Serial connection to port {} is already open!", port);
             }
-        } catch (NoSuchPortException | PortInUseException | UnsupportedCommOperationException | IOException
-                | TooManyListenersException ex) {
+        } catch (UnsupportedCommOperationException | IOException | TooManyListenersException ex) {
+            closeConnection();
+            throw new ConnectException(ex);
+        } catch (NoSuchPortException | PortInUseException ex) {
             throw new ConnectException(ex);
         }
     }

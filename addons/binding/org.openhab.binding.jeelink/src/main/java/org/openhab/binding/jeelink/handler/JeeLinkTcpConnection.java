@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2014-2016 by the respective copyright holders.
+ * Copyright (c) 2010-2017 by the respective copyright holders.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
  * @author Volker Bier - Initial contribution
  */
 public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
-    private static final Pattern IP_P = Pattern.compile("([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+):([0-9]+)");
+    private static final Pattern IP_PORT_PATTERN = Pattern.compile("([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+):([0-9]+)");
 
     private final Logger logger = LoggerFactory.getLogger(JeeLinkTcpConnection.class);
 
@@ -53,7 +53,7 @@ public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
             return;
         }
 
-        Matcher ipm = IP_P.matcher(port);
+        Matcher ipm = IP_PORT_PATTERN.matcher(port);
         if (!ipm.matches()) {
             throw new ConnectException("Invalid TCP port specification: " + port);
         }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2014-2016 by the respective copyright holders.
+ * Copyright (c) 2010-2017 by the respective copyright holders.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -30,10 +30,7 @@ public class Ec3kReadingConverter extends JeeLinkReadingConverter<Ec3kReading> {
             Matcher matcher = LINE_P.matcher(inputLine);
             if (matcher.matches()) {
                 /*
-                 * [ec3kSerial.1]
-                 *
-                 * OK 22 188 129 0 209 209 102 0 174 89 187 0 1 123 102 0 0 10 117 2 0
-                 * id = BC81
+                 * OK 22 188 129 0 209 209 102 0 174 89 187 0 1 123 102 0 0 10 117 2 0 (ID = BC81)
                  */
                 long id1 = Long.parseLong(matcher.group(1));
                 long id2 = Long.parseLong(matcher.group(2));

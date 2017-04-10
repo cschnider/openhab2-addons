@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2014-2016 by the respective copyright holders.
+ * Copyright (c) 2010-2017 by the respective copyright holders.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -135,8 +135,8 @@ public abstract class JeeLinkSensorHandler<R extends Reading> extends BaseThingH
                         // make sure status is online as soon as we get a reading
                         updateStatus(ThingStatus.ONLINE);
                     } catch (Throwable th) {
-                        logger.error("Uncaught throwable in JeeLink sensor handler for thing " + getThing().getLabel()
-                                + " (" + getThing().getUID() + ")...", th);
+                        logger.error("Uncaught throwable in JeeLink sensor handler for thing {} ({})",
+                                getThing().getLabel(), getThing().getUID(), th);
                     }
                 }
             };
@@ -164,8 +164,8 @@ public abstract class JeeLinkSensorHandler<R extends Reading> extends BaseThingH
                     try {
                         updateReadingStates(listener.getCurrentReading());
                     } catch (Throwable th) {
-                        logger.error("Uncaught throwable in JeeLink sensor handler for thing " + getThing().getLabel()
-                                + " (" + getThing().getUID() + ")...", th);
+                        logger.error("Uncaught throwable in JeeLink sensor handler for thing {} ({})",
+                                getThing().getLabel(), getThing().getUID(), th);
                     }
                 }
             }
@@ -191,7 +191,7 @@ public abstract class JeeLinkSensorHandler<R extends Reading> extends BaseThingH
         };
         logger.debug("JeeLink sensor timeout job for thing {} ({}) created with interval {} s", getThing().getLabel(),
                 getThing().getUID(), sensorTimeout);
-        return scheduler.scheduleAtFixedRate(runnable, sensorTimeout, 1, TimeUnit.SECONDS);
+        return scheduler.scheduleWithFixedDelay(runnable, sensorTimeout, 1, TimeUnit.SECONDS);
     }
 
     @Override
