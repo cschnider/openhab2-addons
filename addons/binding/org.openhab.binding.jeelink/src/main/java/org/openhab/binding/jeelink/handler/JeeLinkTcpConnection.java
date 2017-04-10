@@ -42,6 +42,7 @@ public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
             logger.info("Closing TCP connection to port {}...", port);
             reader.close();
             reader = null;
+            closeSocketSilently();
             socket = null;
         }
     }
@@ -66,11 +67,26 @@ public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
             logger.debug("Creating TCP socket to {}...", port);
             socket = new Socket(hostName, portNumber);
             logger.debug("TCP socket created.");
-            reader = new Reader(socket);
-            reader.start();
         } catch (IOException ex) {
             logger.error("Failed to create socket.", ex);
             throw new ConnectException(ex);
+        }
+
+        try {
+            reader = new Reader(socket);
+            reader.start();
+        } catch (IOException ex) {
+            closeSocketSilently();
+            logger.error("Failed to create reader.", ex);
+            throw new ConnectException(ex);
+        }
+    }
+
+    private void closeSocketSilently() {
+        try {
+            socket.close();
+        } catch (IOException e) {
+            logger.error("Failed to close socket.", e);
         }
     }
 
