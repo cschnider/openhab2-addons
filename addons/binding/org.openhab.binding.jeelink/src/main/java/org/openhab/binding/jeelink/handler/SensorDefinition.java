@@ -26,8 +26,8 @@ import org.openhab.binding.jeelink.handler.lacrosse.LaCrosseSensorDefinition;
  * @param <R> the Reading type this sensor provides.
  */
 public abstract class SensorDefinition<R extends Reading<R>> {
-    private static HashMap<JeeLinkHandler, ArrayList<JeeLinkReadingConverter<?>>> CONVERTERS = new HashMap<>();
-    private static HashSet<SensorDefinition<?>> SENSOR_DEFS = new HashSet<>();
+    private static final HashMap<JeeLinkHandler, ArrayList<JeeLinkReadingConverter<?>>> CONVERTERS = new HashMap<>();
+    private static final HashSet<SensorDefinition<?>> SENSOR_DEFS = new HashSet<>();
 
     final ThingTypeUID thingTypeUid;
     final String sketchName;
