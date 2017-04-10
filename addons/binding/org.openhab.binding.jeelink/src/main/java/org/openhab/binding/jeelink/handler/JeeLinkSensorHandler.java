@@ -116,28 +116,23 @@ public abstract class JeeLinkSensorHandler<R extends Reading> extends BaseThingH
             listener = new JeeLinkReadingListener<R>(avg) {
                 @Override
                 public synchronized void handleReading(R reading) {
-                    try {
-                        if (isReadingWithinBounds(reading)) {
-                            boolean initial = lastReading == null;
+                    if (isReadingWithinBounds(reading)) {
+                        boolean initial = lastReading == null;
 
-                            // propagate initial reading
-                            if (initial) {
-                                updateReadingStates(reading);
-                            }
-                            super.handleReading(reading);
-
-                            // propagate every reading in live mode
-                            if (!initial && updateInterval == 0) {
-                                updateReadingStates(getCurrentReading());
-                            }
+                        // propagate initial reading
+                        if (initial) {
+                            updateReadingStates(reading);
                         }
+                        super.handleReading(reading);
 
-                        // make sure status is online as soon as we get a reading
-                        updateStatus(ThingStatus.ONLINE);
-                    } catch (Throwable th) {
-                        logger.error("Uncaught throwable in JeeLink sensor handler for thing {} ({})",
-                                getThing().getLabel(), getThing().getUID(), th);
+                        // propagate every reading in live mode
+                        if (!initial && updateInterval == 0) {
+                            updateReadingStates(getCurrentReading());
+                        }
                     }
+
+                    // make sure status is online as soon as we get a reading
+                    updateStatus(ThingStatus.ONLINE);
                 }
             };
 
@@ -161,12 +156,7 @@ public abstract class JeeLinkSensorHandler<R extends Reading> extends BaseThingH
                         getThing().getUID());
 
                 if (listener != null) {
-                    try {
-                        updateReadingStates(listener.getCurrentReading());
-                    } catch (Throwable th) {
-                        logger.error("Uncaught throwable in JeeLink sensor handler for thing {} ({})",
-                                getThing().getLabel(), getThing().getUID(), th);
-                    }
+                    updateReadingStates(listener.getCurrentReading());
                 }
             }
         };

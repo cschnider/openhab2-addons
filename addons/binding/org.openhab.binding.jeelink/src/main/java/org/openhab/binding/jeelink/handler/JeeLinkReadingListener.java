@@ -9,7 +9,7 @@
 package org.openhab.binding.jeelink.handler;
 
 /**
- * Base class for a reading listener.
+ * Reading listener that only keeps track of the current reading.
  *
  * @author Volker Bier - Initial contribution
  */
