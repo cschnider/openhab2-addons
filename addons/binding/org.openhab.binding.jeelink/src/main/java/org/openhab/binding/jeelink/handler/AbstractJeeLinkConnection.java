@@ -14,6 +14,7 @@ import java.io.OutputStreamWriter;
 import java.net.ConnectException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,7 +29,7 @@ import org.slf4j.LoggerFactory;
  * @author Volker Bier - Initial contribution
  */
 public abstract class AbstractJeeLinkConnection implements JeeLinkConnection {
-    private final Logger logger = LoggerFactory.getLogger(JeeLinkSerialConnection.class);
+    private final Logger logger = LoggerFactory.getLogger(AbstractJeeLinkConnection.class);
 
     protected final ArrayList<JeeLinkReadingConverter<?>> inputHandlers = new ArrayList<>();
     protected String sketchName = null;
@@ -100,10 +101,11 @@ public abstract class AbstractJeeLinkConnection implements JeeLinkConnection {
                 OutputStream initStream;
                 initStream = getInitStream();
                 if (initStream != null) {
-                    try (OutputStreamWriter w = new OutputStreamWriter(initStream)) {
-                        for (String cmd : initCommands) {
-                            w.write(cmd);
-                        }
+                    // do not close the writer as this closes the underlying stream, and
+                    // in case of tcp connections, the underlying socket
+                    OutputStreamWriter w = new OutputStreamWriter(initStream);
+                    for (String cmd : initCommands) {
+                        w.write(cmd);
                     }
                 } else {
                     logger.warn("Connection on port {} did not provide an init stream for writing init commands", port);
@@ -119,12 +121,13 @@ public abstract class AbstractJeeLinkConnection implements JeeLinkConnection {
         return sketchName;
     }
 
-    public static JeeLinkConnection createFor(JeeLinkConfig config) throws ConnectException {
+    public static JeeLinkConnection createFor(JeeLinkConfig config, ScheduledExecutorService scheduler)
+            throws ConnectException {
         JeeLinkConnection connection;
         if (config.portName.startsWith("serial://")) {
             connection = new JeeLinkSerialConnection(config.portName.substring(9), 57600);
         } else if (config.portName.startsWith("tcp://")) {
-            connection = new JeeLinkTcpConnection(config.portName.substring(6));
+            connection = new JeeLinkTcpConnection(config.portName.substring(6), scheduler);
         } else {
             throw new ConnectException("Don't know how to open connection to " + config.portName);
         }

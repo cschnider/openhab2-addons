@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Socket;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -29,11 +30,13 @@ public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
 
     private final Logger logger = LoggerFactory.getLogger(JeeLinkTcpConnection.class);
 
+    private ScheduledExecutorService scheduler;
     private Reader reader;
     private Socket socket;
 
-    public JeeLinkTcpConnection(String port) {
+    public JeeLinkTcpConnection(String port, ScheduledExecutorService scheduler) {
         super(port);
+        this.scheduler = scheduler;
     }
 
     @Override
@@ -62,10 +65,11 @@ public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
         String hostName = ipm.group(1);
         int portNumber = Integer.parseInt(ipm.group(2));
 
-        logger.info("Opening TCP connection to host {} port {}...", hostName, portNumber);
+        logger.debug("Opening TCP connection to host {} port {}...", hostName, portNumber);
         try {
             logger.debug("Creating TCP socket to {}...", port);
             socket = new Socket(hostName, portNumber);
+            socket.setKeepAlive(true);
             logger.debug("TCP socket created.");
         } catch (IOException ex) {
             logger.error("Failed to create socket.", ex);
@@ -74,7 +78,7 @@ public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
 
         try {
             reader = new Reader(socket);
-            reader.start();
+            scheduler.execute(reader);
         } catch (IOException ex) {
             closeSocketSilently();
             logger.error("Failed to create reader.", ex);
@@ -95,7 +99,7 @@ public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
         return socket == null ? null : socket.getOutputStream();
     }
 
-    private class Reader extends Thread {
+    private class Reader implements Runnable {
         private Socket socket;
         private BufferedReader inputReader;
         private volatile boolean isRunning = true;

@@ -40,7 +40,7 @@ public class JeeLinkHandler extends BaseBridgeHandler implements BridgeHandler {
     public void initialize() {
         try {
             JeeLinkConfig cfg = getConfig().as(JeeLinkConfig.class);
-            connection = AbstractJeeLinkConnection.createFor(cfg);
+            connection = AbstractJeeLinkConnection.createFor(cfg, scheduler);
             connection.openConnection();
 
             String initCommands = cfg.initCommands;
