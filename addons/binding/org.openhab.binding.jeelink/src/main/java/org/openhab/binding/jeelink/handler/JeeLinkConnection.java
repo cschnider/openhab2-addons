@@ -25,6 +25,8 @@ public interface JeeLinkConnection {
 
     void openConnection() throws ConnectException;
 
+    boolean isOpen();
+
     OutputStream getInitStream() throws IOException;
 
     String getSketchName();

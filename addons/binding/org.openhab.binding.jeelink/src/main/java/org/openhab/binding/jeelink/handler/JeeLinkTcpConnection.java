@@ -42,12 +42,17 @@ public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
     @Override
     public synchronized void closeConnection() {
         if (reader != null) {
-            logger.info("Closing TCP connection to port {}...", port);
+            logger.debug("Closing TCP connection to port {}...", port);
             reader.close();
             reader = null;
             closeSocketSilently();
             socket = null;
         }
+    }
+
+    @Override
+    public boolean isOpen() {
+        return reader != null;
     }
 
     @Override
@@ -129,6 +134,8 @@ public class JeeLinkTcpConnection extends AbstractJeeLinkConnection {
                 }
             }
             logger.debug("Reader for TCP port {} finished...", port);
+
+            closeConnection();
         }
 
         public void close() {

@@ -41,14 +41,14 @@ public class JeeLinkSerialConnection extends AbstractJeeLinkConnection {
     public JeeLinkSerialConnection(String portName, int baudRate) {
         super(portName);
 
-        logger.info("Creating serial connection for port {} with baud rate {}...", portName, baudRate);
+        logger.debug("Creating serial connection for port {} with baud rate {}...", portName, baudRate);
         this.baudRate = baudRate;
     }
 
     @Override
     public synchronized void closeConnection() {
         if (open) {
-            logger.info("Closing serial connection to port {}...", port);
+            logger.debug("Closing serial connection to port {}...", port);
 
             serialPort.notifyOnDataAvailable(false);
             serialPort.removeEventListener();
@@ -61,10 +61,15 @@ public class JeeLinkSerialConnection extends AbstractJeeLinkConnection {
     }
 
     @Override
+    public boolean isOpen() {
+        return open;
+    }
+
+    @Override
     public synchronized void openConnection() throws ConnectException {
         try {
             if (!open) {
-                logger.info("Opening serial connection to port {} with baud rate {}...", port, baudRate);
+                logger.debug("Opening serial connection to port {} with baud rate {}...", port, baudRate);
 
                 CommPortIdentifier portIdentifier;
 
@@ -86,6 +91,7 @@ public class JeeLinkSerialConnection extends AbstractJeeLinkConnection {
                             }
                         } catch (IOException ex) {
                             logger.error("IOException reading from port {}!", port, ex);
+                            closeConnection();
                         }
                     }
                 });

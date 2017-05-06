@@ -9,11 +9,12 @@
 package org.openhab.binding.jeelink.handler;
 
 import java.util.ArrayList;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.smarthome.core.thing.Bridge;
 import org.eclipse.smarthome.core.thing.ChannelUID;
 import org.eclipse.smarthome.core.thing.ThingStatus;
-import org.eclipse.smarthome.core.thing.ThingStatusDetail;
 import org.eclipse.smarthome.core.thing.binding.BaseBridgeHandler;
 import org.eclipse.smarthome.core.thing.binding.BridgeHandler;
 import org.eclipse.smarthome.core.types.Command;
@@ -32,34 +33,50 @@ public class JeeLinkHandler extends BaseBridgeHandler implements BridgeHandler {
     private JeeLinkConnection connection;
     private ArrayList<JeeLinkReadingConverter<?>> converters;
 
+    private ScheduledFuture<?> connectJob;
+
     public JeeLinkHandler(Bridge bridge) {
         super(bridge);
     }
 
     @Override
     public void initialize() {
+        JeeLinkConfig cfg = getConfig().as(JeeLinkConfig.class);
+        converters = SensorDefinition.createConverters(this, cfg.sketchName);
+
         try {
-            JeeLinkConfig cfg = getConfig().as(JeeLinkConfig.class);
             connection = AbstractJeeLinkConnection.createFor(cfg, scheduler);
-            connection.openConnection();
-
-            String initCommands = cfg.initCommands;
-            if (initCommands != null && !initCommands.trim().isEmpty()) {
-                logger.debug("Setting init commands for port {}: {}", connection.getPort(), initCommands);
-                connection.setInitCommands(initCommands);
-            }
-
-            converters = SensorDefinition.createConverters(this, cfg.sketchName);
-            for (JeeLinkReadingConverter<?> cnv : converters) {
-                connection.addReadingConverter(cnv);
-            }
-            logger.debug("updating JeeLinkHandler for port {} to be ONLINE...", connection.getPort());
-            updateStatus(ThingStatus.ONLINE);
-            logger.debug("JeeLinkHandler for port {} is ONLINE.", connection.getPort());
-        } catch (java.net.ConnectException | ConnectException ex) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, ex.getMessage());
+        } catch (java.net.ConnectException e) {
+            updateStatus(ThingStatus.OFFLINE);
             logger.debug("JeeLinkHandler for port {} is OFFLINE.", connection.getPort());
         }
+        Runnable runnable = new Runnable() {
+            @Override
+            public void run() {
+                if (!connection.isOpen()) {
+                    updateStatus(ThingStatus.OFFLINE);
+
+                    try {
+                        connection.openConnection();
+
+                        String initCommands = cfg.initCommands;
+                        if (initCommands != null && !initCommands.trim().isEmpty()) {
+                            logger.debug("Setting init commands for port {}: {}", connection.getPort(), initCommands);
+                            connection.setInitCommands(initCommands);
+                        }
+
+                        for (JeeLinkReadingConverter<?> cnv : converters) {
+                            connection.addReadingConverter(cnv);
+                        }
+                        updateStatus(ThingStatus.ONLINE);
+                        logger.debug("JeeLinkHandler for port {} is ONLINE.", connection.getPort());
+                    } catch (ConnectException ex) {
+                        logger.debug("JeeLinkHandler for port {} is OFFLINE.", connection.getPort());
+                    }
+                }
+            }
+        };
+        connectJob = scheduler.scheduleWithFixedDelay(runnable, 0, 10, TimeUnit.SECONDS);
     }
 
     @Override
@@ -70,6 +87,11 @@ public class JeeLinkHandler extends BaseBridgeHandler implements BridgeHandler {
 
     @Override
     public void dispose() {
+        if (connectJob != null) {
+            connectJob.cancel(true);
+            connectJob = null;
+        }
+
         if (connection != null) {
             connection.removeReadingConverters();
             connection.closeConnection();
